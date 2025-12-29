@@ -2,10 +2,23 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
-#include "Info/Types.h"
+#include "DungeonMaster/Info/Types.h" // FGridCoordinate ve structlar burada varsayıyorum
 #include "GridSubsystem.generated.h"
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnGridChanged, const FGridCoordinate&, ChangedCoord);
+// Yol bulma sırasında kullanılacak geçici düğüm yapısı
+struct FPathNode
+{
+	FGridCoordinate Coord;
+	FGridCoordinate ParentCoord; // Geldiğimiz yön (Geri iz sürmek için)
+	float G; // Başlangıçtan buraya maliyet
+	float H; // Buradan hedefe tahmini maliyet (Heuristic)
+	float F() const { return G + H; } // Toplam skor
+
+	bool operator<(const FPathNode& Other) const
+	{
+		return F() < Other.F(); // Priority Queue için sıralama
+	}
+};
 
 UCLASS()
 class DUNGEONMASTER_API UGridSubsystem : public UWorldSubsystem
@@ -15,28 +28,24 @@ class DUNGEONMASTER_API UGridSubsystem : public UWorldSubsystem
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 
-	// Grid oluşturma
-	UFUNCTION(BlueprintCallable)
+	UFUNCTION(BlueprintCallable, Category="Grid Logic")
 	void InitializeGrid(int32 Width, int32 Height);
 
-	// Tile yerleştirme fonksiyonu
-	UFUNCTION(BlueprintCallable)
-	bool TryPlaceTile(const FGridCoordinate& Coord, FName TileID);
+	// İki nokta arasında yol var mı? Varsa yolu döner.
+	UFUNCTION(BlueprintCallable, Category="Grid Logic")
+	bool FindPath(FGridCoordinate Start, FGridCoordinate End, TArray<FGridCoordinate>& OutPath);
 
-	// Bir koordinatın geçerli olup olmadığını ve yürünebilirliğini kontrol et
-	bool IsWalkable(const FGridCoordinate& Coord) const;
-    
-	// Grid verisine erişim
-	const FCellData* GetCellData(const FGridCoordinate& Coord) const;
+	// Bir kare bloklu mu? (Duvar var mı?)
+	bool IsBlocked(const FGridCoordinate& Coord) const;
 
-	// UI veya Görsel Manager dinlesin diye Event
-	UPROPERTY(BlueprintAssignable)
-	FOnGridChanged OnGridChanged;
+	// Grid sınırları içinde mi?
+	bool IsValidCoordinate(const FGridCoordinate& Coord) const;
 
 private:
-	// Grid verisini TMap içinde tutuyoruz. Array'den daha güvenli (Sparse grid için)
 	TMap<FGridCoordinate, FCellData> GridMap;
-
 	int32 GridWidth;
 	int32 GridHeight;
+
+	// A* algoritması için komşuları getiren yardımcı fonksiyon
+	TArray<FGridCoordinate> GetNeighbors(const FGridCoordinate& Center) const;
 };
