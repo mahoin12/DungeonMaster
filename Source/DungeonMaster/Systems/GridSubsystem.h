@@ -20,6 +20,12 @@ struct FPathNode
 	}
 };
 
+/**
+ * UGridSubsystem
+ * * Amaç: Tüm Grid verisini ve oyun mantığını yöneten singleton benzeri sınıf.
+ * Harita burada saklanır, yol bulma (Pathfinding) burada yapılır.
+ * Subsystem olduğu için levele actor koymaya gerek kalmadan her yerden erişilir.
+ */
 UCLASS()
 class DUNGEONMASTER_API UGridSubsystem : public UWorldSubsystem
 {
@@ -28,17 +34,17 @@ class DUNGEONMASTER_API UGridSubsystem : public UWorldSubsystem
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 
-	UFUNCTION(BlueprintCallable, Category="Grid Logic")
+	// Grid'i başlatır
 	void InitializeGrid(int32 Width, int32 Height);
 
-	// İki nokta arasında yol var mı? Varsa yolu döner.
-	UFUNCTION(BlueprintCallable, Category="Grid Logic")
+	// Bir tile yerleştirmeyi dener. Yol tıkanıyorsa false döner.
+	bool TryPlaceTile(const FGridCoordinate& Coord, FName TileID);
+
+	// A* Yol Bulma Algoritması
 	bool FindPath(FGridCoordinate Start, FGridCoordinate End, TArray<FGridCoordinate>& OutPath);
 
-	// Bir kare bloklu mu? (Duvar var mı?)
+	// Yardımcılar
 	bool IsBlocked(const FGridCoordinate& Coord) const;
-
-	// Grid sınırları içinde mi?
 	bool IsValidCoordinate(const FGridCoordinate& Coord) const;
 
 private:
@@ -46,6 +52,10 @@ private:
 	int32 GridWidth;
 	int32 GridHeight;
 
-	// A* algoritması için komşuları getiren yardımcı fonksiyon
+	// Düşmanların doğduğu ve gitmeye çalıştığı yer (Sabit varsayıyoruz şimdilik)
+	FGridCoordinate SpawnPoint = {0, 0};
+	FGridCoordinate CorePoint = {9, 9};
+
+	// Yol bulma için komşuları getirir
 	TArray<FGridCoordinate> GetNeighbors(const FGridCoordinate& Center) const;
 };

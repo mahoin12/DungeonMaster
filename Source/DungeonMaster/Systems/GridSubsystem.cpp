@@ -26,6 +26,53 @@ void UGridSubsystem::InitializeGrid(int32 Width, int32 Height)
 	}
 }
 
+bool UGridSubsystem::TryPlaceTile(const FGridCoordinate& Coord, FName TileID)
+{
+	if (!IsValidCoordinate(Coord)) return false;
+
+	// Zaten dolu mu?
+	if (IsBlocked(Coord)) 
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Hücre zaten dolu!"));
+		return false;
+	}
+
+	// 1. Geçici olarak haritaya "Duvar" koyduğumuzu simüle et
+	ECellType OriginalType = ECellType::Empty;
+	if (GridMap.Contains(Coord)) OriginalType = GridMap[Coord].CellType;
+
+	FCellData TempData;
+	TempData.CellType = ECellType::Wall; // Şimdilik her şeyi duvar sayalım
+	GridMap.Add(Coord, TempData);
+
+	// 2. Yol hala açık mı kontrol et (Girişten Kalbe yol var mı?)
+	TArray<FGridCoordinate> TestPath;
+	bool bPathExists = FindPath(SpawnPoint, CorePoint, TestPath);
+
+	if (bPathExists)
+	{
+		// YOL AÇIK: İnşaatı onayla
+		FCellData FinalData;
+		FinalData.CellType = ECellType::Wall; // Veya TileID'ye göre tip
+		FinalData.TileID = TileID;
+		GridMap.Add(Coord, FinalData);
+		
+		// Event yayınla (Görselleştirici bunu dinleyip mesh koyacak)
+		// OnGridChanged.Broadcast(Coord); 
+		return true;
+	}
+	else
+	{
+		// YOL TIKALI: Değişikliği geri al
+		FCellData RevertData;
+		RevertData.CellType = OriginalType;
+		GridMap.Add(Coord, RevertData);
+		
+		UE_LOG(LogTemp, Error, TEXT("İnşaat Yolu Tıkıyor! İzin verilmedi."));
+		return false;
+	}
+}
+
 bool UGridSubsystem::IsBlocked(const FGridCoordinate& Coord) const
 {
 	if (!GridMap.Contains(Coord)) return true; // Harita dışı veya tanımsız
