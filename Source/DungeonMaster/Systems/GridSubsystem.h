@@ -22,6 +22,8 @@ struct FPathNode
 	}
 };
 
+
+class AGridUnit;
 /**
  * UGridSubsystem
  * * Amaç: Tüm Grid verisini ve oyun mantığını yöneten singleton benzeri sınıf.
@@ -52,6 +54,13 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Events")
 	FOnGridStateChanged OnGridStateChanged;
 
+	UFUNCTION(BlueprintCallable, Category = "Grid Logic")
+	AGridUnit* SpawnUnit(TSubclassOf<AGridUnit> UnitClass, FGridCoordinate StartCoord);
+
+	// Tüm unitleri Kalbe doğru yürüt (Test için)
+	UFUNCTION(BlueprintCallable, Category = "Grid Logic")
+	void MoveAllUnitsToCore();
+
 private:
 	TMap<FGridCoordinate, FCellData> GridMap;
 	int32 GridWidth;
@@ -63,4 +72,7 @@ private:
 
 	// Yol bulma için komşuları getirir
 	TArray<FGridCoordinate> GetNeighbors(const FGridCoordinate& Center) const;
+
+	UPROPERTY()
+	TArray<AGridUnit*> ActiveUnits;
 };

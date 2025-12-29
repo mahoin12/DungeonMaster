@@ -1,5 +1,7 @@
 #include "GridSubsystem.h"
 
+#include "DungeonMaster/Actors/GridUnit.h"
+
 void UGridSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
@@ -89,6 +91,48 @@ bool UGridSubsystem::IsBlocked(const FGridCoordinate& Coord) const
 bool UGridSubsystem::IsValidCoordinate(const FGridCoordinate& Coord) const
 {
 	return Coord.X >= 0 && Coord.X < GridWidth && Coord.Y >= 0 && Coord.Y < GridHeight;
+}
+
+AGridUnit* UGridSubsystem::SpawnUnit(TSubclassOf<AGridUnit> UnitClass, FGridCoordinate StartCoord)
+{
+	if (!UnitClass || !GetWorld()) return nullptr;
+
+	// Grid sınırlarında mı?
+	if (!IsValidCoordinate(StartCoord)) return nullptr;
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	// Aktörü spawn et (Konumu Unit kendi ayarlayacak)
+	AGridUnit* NewUnit = GetWorld()->SpawnActor<AGridUnit>(UnitClass, FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
+	
+	if (NewUnit)
+	{
+		NewUnit->InitializeAt(StartCoord);
+		ActiveUnits.Add(NewUnit);
+	}
+
+	return NewUnit;
+}
+
+void UGridSubsystem::MoveAllUnitsToCore()
+{
+	for (AGridUnit* Unit : ActiveUnits)
+	{
+		if (!Unit) continue;
+
+		// Unit'in olduğu yerden Core'a yol bul
+		// Not: Unit'in current coord değişkenini okumak için getter eklemen gerekebilir veya public yapabilirsin şimdilik.
+		// Şimdilik test için (0,0)'dan (9,9)'a yol buluyoruz varsayalım.
+		// Gerçek implementasyonda Unit->GetCurrentCoord() kullanılmalı.
+		
+		TArray<FGridCoordinate> Path;
+		// Unitin başlangıç noktası SpawnPoint varsayıyoruz şimdilik
+		if (FindPath(SpawnPoint, CorePoint, Path))
+		{
+			Unit->FollowPath(Path);
+		}
+	}
 }
 
 TArray<FGridCoordinate> UGridSubsystem::GetNeighbors(const FGridCoordinate& Center) const
