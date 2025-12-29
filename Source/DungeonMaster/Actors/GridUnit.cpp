@@ -1,5 +1,6 @@
 #include "GridUnit.h"
 #include "Components/CapsuleComponent.h"
+#include "DungeonMaster/Systems/WaveSubsystem.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
 AGridUnit::AGridUnit()
@@ -22,6 +23,24 @@ AGridUnit::AGridUnit()
 void AGridUnit::BeginPlay()
 {
 	Super::BeginPlay();
+}
+
+void AGridUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	Super::EndPlay(EndPlayReason);
+
+	// Eğer oyun dünyası kapanmıyorsa (Oyun bitişi değilse)
+	if (EndPlayReason != EEndPlayReason::EndPlayInEditor && EndPlayReason != EEndPlayReason::Quit)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			if (UWaveSubsystem* WaveSys = World->GetSubsystem<UWaveSubsystem>())
+			{
+				// Sisteme "Ben gittim, sayıdan düş" diyoruz
+				WaveSys->RegisterEnemyDeath(this);
+			}
+		}
+	}
 }
 
 void AGridUnit::InitializeAt(FGridCoordinate StartCoord)

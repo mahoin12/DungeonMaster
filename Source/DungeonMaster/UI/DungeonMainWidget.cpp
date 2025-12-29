@@ -1,7 +1,19 @@
 #include "DungeonMainWidget.h"
 #include "DungeonTileDrag.h"
+#include "Components/Button.h"
 #include "DungeonMaster/Systems/GridSubsystem.h"
+#include "DungeonMaster/Systems/WaveSubsystem.h"
 #include "Kismet/GameplayStatics.h"
+
+void UDungeonMainWidget::NativeConstruct()
+{
+	Super::NativeConstruct();
+
+	if (StartWaveBtn)
+	{
+		StartWaveBtn->OnClicked.AddDynamic(this, &UDungeonMainWidget::OnStartWaveClicked);
+	}
+}
 
 bool UDungeonMainWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
 {
@@ -79,4 +91,22 @@ bool UDungeonMainWidget::GetGridCoordinateFromScreen(const FVector2D& ScreenPosi
 	}
 
 	return false;
+}
+
+void UDungeonMainWidget::OnStartWaveClicked()
+{
+	if (!TestWaveData)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Wave Data Asset seçili değil! Widget içinde 'TestWaveData'yı ata."));
+		return;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		if (UWaveSubsystem* WaveSys = World->GetSubsystem<UWaveSubsystem>())
+		{
+			UE_LOG(LogTemp, Log, TEXT("Savaş Başlatılıyor..."));
+			WaveSys->StartCombatPhase(TestWaveData);
+		}
+	}
 }

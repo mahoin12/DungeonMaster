@@ -1,5 +1,6 @@
 #include "GridSubsystem.h"
 
+#include "WaveSubsystem.h"
 #include "DungeonMaster/Actors/GridUnit.h"
 
 void UGridSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -30,6 +31,18 @@ void UGridSubsystem::InitializeGrid(int32 Width, int32 Height)
 
 bool UGridSubsystem::TryPlaceTile(const FGridCoordinate& Coord, FName TileID)
 {
+	if (const UWorld* World = GetWorld())
+	{
+		if (const UWaveSubsystem* WaveSys = World->GetSubsystem<UWaveSubsystem>())
+		{
+			if (WaveSys->GetCurrentPhase() == EGamePhase::Combat)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("Savaş sırasında inşaat yapılamaz!"));
+				return false; 
+			}
+		}
+	}
+	
 	if (!IsValidCoordinate(Coord)) return false;
 
 	// Zaten dolu mu?
