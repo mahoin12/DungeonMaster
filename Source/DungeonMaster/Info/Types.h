@@ -15,6 +15,15 @@ enum class ECellType : uint8
 	Core        UMETA(DisplayName = "Core") // Korunacak hedef
 };
 
+UENUM(BlueprintType)
+enum class EGamePhase : uint8
+{
+	Preparation UMETA(DisplayName = "Preparation Phase"), // İnşaat yapılabilir
+	Combat      UMETA(DisplayName = "Combat Phase"),      // Düşmanlar gelir, inşaat kilitli
+	Victory     UMETA(DisplayName = "Victory"),
+	Defeat      UMETA(DisplayName = "Defeat")
+};
+
 // Grid koordinatları (FIntPoint alternatifi ama Hash fonksiyonu için özelleştirebiliriz)
 USTRUCT(BlueprintType)
 struct FGridCoordinate
