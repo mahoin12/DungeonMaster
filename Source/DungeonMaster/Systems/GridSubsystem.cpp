@@ -42,35 +42,40 @@ bool UGridSubsystem::TryPlaceTile(const FGridCoordinate& Coord, FName TileID)
 	if (GridMap.Contains(Coord)) OriginalType = GridMap[Coord].CellType;
 
 	FCellData TempData;
-	TempData.CellType = ECellType::Wall; // Şimdilik her şeyi duvar sayalım
+	TempData.CellType = ECellType::Wall; 
 	GridMap.Add(Coord, TempData);
 
 	// 2. Yol hala açık mı kontrol et (Girişten Kalbe yol var mı?)
 	TArray<FGridCoordinate> TestPath;
-	bool bPathExists = FindPath(SpawnPoint, CorePoint, TestPath);
+    
+	// İşte 'bCanPlace' dediğim değişken aslında buradaki sonucumuz:
 
-	if (bPathExists)
+	if (FindPath(SpawnPoint, CorePoint, TestPath))
 	{
-		// YOL AÇIK: İnşaatı onayla
+		// YOL AÇIK: İnşaatı onayla ve veriyi güncelle
 		FCellData FinalData;
-		FinalData.CellType = ECellType::Wall; // Veya TileID'ye göre tip
+		FinalData.CellType = ECellType::Room; // Veya TileID'ye göre duvar/tuzak vs.
 		FinalData.TileID = TileID;
+        
+		// Map'i güncelle
 		GridMap.Add(Coord, FinalData);
-		
-		// Event yayınla (Görselleştirici bunu dinleyip mesh koyacak)
-		// OnGridChanged.Broadcast(Coord); 
+        
+		// *** YENİ EKLENEN KISIM ***
+		// Görselleştiriciye (Visualizer) haber ver: "Buraya yeni bir şey kondu, çiz!"
+		if (OnGridStateChanged.IsBound())
+		{
+			OnGridStateChanged.Broadcast(Coord, FinalData);
+		}
+        
 		return true;
 	}
-	else
-	{
-		// YOL TIKALI: Değişikliği geri al
-		FCellData RevertData;
-		RevertData.CellType = OriginalType;
-		GridMap.Add(Coord, RevertData);
-		
-		UE_LOG(LogTemp, Error, TEXT("İnşaat Yolu Tıkıyor! İzin verilmedi."));
-		return false;
-	}
+	// YOL TIKALI: Değişikliği geri al (Simülasyonu iptal et)
+	FCellData RevertData;
+	RevertData.CellType = OriginalType;
+	GridMap.Add(Coord, RevertData);
+        
+	UE_LOG(LogTemp, Error, TEXT("İnşaat Yolu Tıkıyor! İzin verilmedi."));
+	return false;
 }
 
 bool UGridSubsystem::IsBlocked(const FGridCoordinate& Coord) const

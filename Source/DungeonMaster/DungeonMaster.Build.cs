@@ -26,20 +26,8 @@ public class DungeonMaster : ModuleRules
 			"DeveloperSettings"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { });
-
-		PublicIncludePaths.AddRange(new string[] {
-			"DungeonMaster",
-			"DungeonMaster/Variant_Strategy",
-			"DungeonMaster/Variant_Strategy/UI",
-			"DungeonMaster/Variant_TwinStick",
-			"DungeonMaster/Variant_TwinStick/AI",
-			"DungeonMaster/Variant_TwinStick/Gameplay",
-			"DungeonMaster/Variant_TwinStick/UI"
-		});
-
 		// Uncomment if you are using Slate UI
-		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "SlateCore" });
 
 		// Uncomment if you are using online features
 		// PrivateDependencyModuleNames.Add("OnlineSubsystem");

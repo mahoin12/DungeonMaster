@@ -5,6 +5,8 @@
 #include "DungeonMaster/Info/Types.h" // FGridCoordinate ve structlar burada varsayıyorum
 #include "GridSubsystem.generated.h"
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnGridStateChanged, FGridCoordinate, Coord, FCellData, NewData);
+
 // Yol bulma sırasında kullanılacak geçici düğüm yapısı
 struct FPathNode
 {
@@ -46,6 +48,9 @@ public:
 	// Yardımcılar
 	bool IsBlocked(const FGridCoordinate& Coord) const;
 	bool IsValidCoordinate(const FGridCoordinate& Coord) const;
+
+	UPROPERTY(BlueprintAssignable, Category = "Events")
+	FOnGridStateChanged OnGridStateChanged;
 
 private:
 	TMap<FGridCoordinate, FCellData> GridMap;
