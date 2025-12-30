@@ -38,6 +38,9 @@ class DUNGEONMASTER_API UGridSubsystem : public UWorldSubsystem
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 
+	UFUNCTION(BlueprintCallable, Category = "Grid Logic")
+	void SpawnCoreUnit();
+
 	// Grid'i başlatır
 	void InitializeGrid(int32 Width, int32 Height);
 
@@ -50,16 +53,19 @@ public:
 	// Yardımcılar
 	bool IsBlocked(const FGridCoordinate& Coord) const;
 	bool IsValidCoordinate(const FGridCoordinate& Coord) const;
-
-	UPROPERTY(BlueprintAssignable, Category = "Events")
-	FOnGridStateChanged OnGridStateChanged;
-
+	
 	UFUNCTION(BlueprintCallable, Category = "Grid Logic")
 	AGridUnit* SpawnUnit(TSubclassOf<AGridUnit> UnitClass, FGridCoordinate StartCoord);
 
 	// Tüm unitleri Kalbe doğru yürüt (Test için)
 	UFUNCTION(BlueprintCallable, Category = "Grid Logic")
 	void MoveAllUnitsToCore();
+
+	FGridCoordinate GetSpawnPoint() const { return SpawnPoint; }
+	FGridCoordinate GetCorePoint() const { return CorePoint; }
+
+	UPROPERTY(BlueprintAssignable, Category = "Events")
+	FOnGridStateChanged OnGridStateChanged;
 
 private:
 	TMap<FGridCoordinate, FCellData> GridMap;
@@ -68,7 +74,7 @@ private:
 
 	// Düşmanların doğduğu ve gitmeye çalıştığı yer (Sabit varsayıyoruz şimdilik)
 	FGridCoordinate SpawnPoint = {0, 0};
-	FGridCoordinate CorePoint = {9, 9};
+	FGridCoordinate CorePoint = {5, 5};
 
 	// Yol bulma için komşuları getirir
 	TArray<FGridCoordinate> GetNeighbors(const FGridCoordinate& Center) const;

@@ -27,7 +27,14 @@ void AGridVisualizer::BeginPlay()
 
 void AGridVisualizer::HandleGridChanged(FGridCoordinate Coord, FCellData NewData)
 {
-	if (!TileSetData) return;
+	// LOG 6: Sinyal ulaştı mı?
+	UE_LOG(LogTemp, Warning, TEXT("VISUALIZER: Grid Degisikligi Algilandi! Coord: (%d, %d), TileID: %s"), Coord.X, Coord.Y, *NewData.TileID.ToString());
+
+	if (!TileSetData)
+	{
+		UE_LOG(LogTemp, Error, TEXT("VISUALIZER: TileSet DataAsset BOS! Lütfen Blueprint üzerinden atama yapin."));
+		return;
+	}
 
 	// 1. Koordinatı Dünya Pozisyonuna Çevir
 	FVector Location(Coord.X * GridCellSize, Coord.Y * GridCellSize, 0.0f);
@@ -37,37 +44,47 @@ void AGridVisualizer::HandleGridChanged(FGridCoordinate Coord, FCellData NewData
 	if (UInstancedStaticMeshComponent* ISMC = GetOrCreateISMC(NewData.TileID))
 	{
 		// 3. Instance Ekle
-		// Not: Eğer burada daha önce bir şey varsa onu silmek gerekir (GridLogic'te dolu kontrolü olduğu için şimdilik es geçiyorum)
-		ISMC->AddInstance(InstanceTransform, true);
+		int32 Index = ISMC->AddInstance(InstanceTransform, true);
+		UE_LOG(LogTemp, Display, TEXT("VISUALIZER: Mesh eklendi. Instance Index: %d"), Index);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("VISUALIZER: ISMC olusturulamadi! TileID DataAsset icinde tanimli mi?"));
 	}
 }
 
 UInstancedStaticMeshComponent* AGridVisualizer::GetOrCreateISMC(FName TileID)
 {
-	// 1. Zaten varsa döndür
 	if (MeshComponents.Contains(TileID))
 	{
 		return MeshComponents[TileID];
 	}
 
-	// 2. Yoksa DataAsset'ten Mesh'i bul
 	if (TileSetData && TileSetData->TileDefinitions.Contains(TileID))
 	{
 		UStaticMesh* MeshToUse = TileSetData->TileDefinitions[TileID].Mesh;
 		if (MeshToUse)
 		{
-			// 3. Yeni ISMC Oluştur
 			FName CompName = FName(*FString::Printf(TEXT("ISMC_%s"), *TileID.ToString()));
 			UInstancedStaticMeshComponent* NewComp = NewObject<UInstancedStaticMeshComponent>(this, CompName);
-			
+            
 			NewComp->SetStaticMesh(MeshToUse);
 			NewComp->SetupAttachment(RootComponent);
 			NewComp->RegisterComponent();
-			
-			// Map'e kaydet
+            
 			MeshComponents.Add(TileID, NewComp);
+            
+			UE_LOG(LogTemp, Log, TEXT("VISUALIZER: Yeni ISMC bileseni olusturuldu: %s"), *TileID.ToString());
 			return NewComp;
 		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("VISUALIZER: ID bulundu ama Mesh BOS! ID: %s"), *TileID.ToString());
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("VISUALIZER: TileID DataAsset icinde BULUNAMADI! ID: %s"), *TileID.ToString());
 	}
 
 	return nullptr;

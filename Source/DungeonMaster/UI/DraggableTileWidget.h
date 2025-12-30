@@ -4,25 +4,34 @@
 #include "Blueprint/UserWidget.h"
 #include "DraggableTileWidget.generated.h"
 
-/**
- * UDraggableTileWidget
- * * Amaç: Oyuncunun envanterinde/marketinde gördüğü tekil eşya kartıdır.
- * Üzerine tıklandığında sürükleme işlemini (DragDetect) başlatır.
- */
+class UImage;
+class UTextBlock;
+
 UCLASS()
 class DUNGEONMASTER_API UDraggableTileWidget : public UUserWidget
 {
 	GENERATED_BODY()
 
 public:
-	// Bu widget hangi tile'ı temsil ediyor? (Tasarım zamanında veya spawn edilirken atanmalı)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Config")
-	FName TileID;
+	// Widget yaratıldığında hangi Tile olduğunu buna söyleyeceğiz
+	UFUNCTION(BlueprintCallable, Category = "Tile Data")
+	void InitializeTile(FName ID);
+
+	void SetTileID(FName ID) { TileID = ID; }
+	FName GetTileID() const { return TileID; }
+	
 
 protected:
-	// Mouse tuşuna basıldığında Unreal'a "Sürükleme ihtimali var, takip et" deriz.
-	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
-	// Sürükleme (Drag) başladığı an tetiklenir. Burada DragDropOperation oluşturulur.
+	UPROPERTY(meta = (BindWidget))
+	UTextBlock* TileNameText;
+	UPROPERTY(meta = (BindWidget))
+	UImage* TileIconImage;
+	
+	
+	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual void NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation) override;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Tile Data")
+	FName TileID;
 };

@@ -1,138 +1,76 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
-
 #include "DungeonMasterPlayerController.h"
-#include "GameFramework/Pawn.h"
-#include "Blueprint/AIBlueprintHelperLibrary.h"
-#include "NiagaraSystem.h"
-#include "NiagaraFunctionLibrary.h"
-#include "DungeonMasterCharacter.h"
-#include "Engine/World.h"
-#include "EnhancedInputComponent.h"
-#include "Navigation/PathFollowingComponent.h"
-#include "InputActionValue.h"
 #include "EnhancedInputSubsystems.h"
-#include "Engine/LocalPlayer.h"
-#include "DungeonMaster.h"
+#include "EnhancedInputComponent.h"
+#include "DungeonMaster/Systems/GridSubsystem.h"
+#include "DungeonMaster/Info/Types.h"
 
 ADungeonMasterPlayerController::ADungeonMasterPlayerController()
 {
-	bIsTouch = false;
-	bMoveToMouseCursor = false;
-
-	// create the path following comp
-	PathFollowingComponent = CreateDefaultSubobject<UPathFollowingComponent>(TEXT("Path Following Component"));
-
-	// configure the controller
 	bShowMouseCursor = true;
-	DefaultMouseCursor = EMouseCursor::Default;
-	CachedDestination = FVector::ZeroVector;
-	FollowTime = 0.f;
+	bEnableClickEvents = true;
+	bEnableMouseOverEvents = true;
+}
+
+void ADungeonMasterPlayerController::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// Enhanced Input Ayarı
+	if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
+	{
+		if (DefaultMappingContext)
+		{
+			Subsystem->AddMappingContext(DefaultMappingContext, 0);
+		}
+	}
 }
 
 void ADungeonMasterPlayerController::SetupInputComponent()
 {
-	// set up gameplay key bindings
 	Super::SetupInputComponent();
 
-	// Only set up input on local player controllers
-	if (IsLocalPlayerController())
+	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent))
 	{
-		// Add Input Mapping Context
-		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
+		if (ClickAction)
 		{
-			Subsystem->AddMappingContext(DefaultMappingContext, 0);
-		}
-
-		// Set up action bindings
-		if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(InputComponent))
-		{
-			// Setup mouse input events
-			EnhancedInputComponent->BindAction(SetDestinationClickAction, ETriggerEvent::Started, this, &ADungeonMasterPlayerController::OnInputStarted);
-			EnhancedInputComponent->BindAction(SetDestinationClickAction, ETriggerEvent::Triggered, this, &ADungeonMasterPlayerController::OnSetDestinationTriggered);
-			EnhancedInputComponent->BindAction(SetDestinationClickAction, ETriggerEvent::Completed, this, &ADungeonMasterPlayerController::OnSetDestinationReleased);
-			EnhancedInputComponent->BindAction(SetDestinationClickAction, ETriggerEvent::Canceled, this, &ADungeonMasterPlayerController::OnSetDestinationReleased);
-
-			// Setup touch input events
-			EnhancedInputComponent->BindAction(SetDestinationTouchAction, ETriggerEvent::Started, this, &ADungeonMasterPlayerController::OnInputStarted);
-			EnhancedInputComponent->BindAction(SetDestinationTouchAction, ETriggerEvent::Triggered, this, &ADungeonMasterPlayerController::OnTouchTriggered);
-			EnhancedInputComponent->BindAction(SetDestinationTouchAction, ETriggerEvent::Completed, this, &ADungeonMasterPlayerController::OnTouchReleased);
-			EnhancedInputComponent->BindAction(SetDestinationTouchAction, ETriggerEvent::Canceled, this, &ADungeonMasterPlayerController::OnTouchReleased);
-		}
-		else
-		{
-			UE_LOG(LogDungeonMaster, Error, TEXT("'%s' Failed to find an Enhanced Input Component! This template is built to use the Enhanced Input system. If you intend to use the legacy system, then you will need to update this C++ file."), *GetNameSafe(this));
+			EnhancedInputComponent->BindAction(ClickAction, ETriggerEvent::Started, this, &ADungeonMasterPlayerController::OnLeftClick);
 		}
 	}
 }
 
-void ADungeonMasterPlayerController::OnInputStarted()
+void ADungeonMasterPlayerController::OnLeftClick()
 {
-	StopMovement();
-
-	// Update the move destination to wherever the cursor is pointing at
-	UpdateCachedDestination();
-}
-
-void ADungeonMasterPlayerController::OnSetDestinationTriggered()
-{
-	// We flag that the input is being pressed
-	FollowTime += GetWorld()->GetDeltaSeconds();
-	
-	// Update the move destination to wherever the cursor is pointing at
-	UpdateCachedDestination();
-	
-	// Move towards mouse pointer or touch
-	APawn* ControlledPawn = GetPawn();
-	if (ControlledPawn != nullptr)
-	{
-		FVector WorldDirection = (CachedDestination - ControlledPawn->GetActorLocation()).GetSafeNormal();
-		ControlledPawn->AddMovementInput(WorldDirection, 1.0, false);
-	}
-}
-
-void ADungeonMasterPlayerController::OnSetDestinationReleased()
-{
-	// If it was a short press
-	if (FollowTime <= ShortPressThreshold)
-	{
-		// We move there and spawn some particles
-		UAIBlueprintHelperLibrary::SimpleMoveToLocation(this, CachedDestination);
-		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, FXCursor, CachedDestination, FRotator::ZeroRotator, FVector(1.f, 1.f, 1.f), true, true, ENCPoolMethod::None, true);
-	}
-
-	FollowTime = 0.f;
-}
-
-// Triggered every frame when the input is held down
-void ADungeonMasterPlayerController::OnTouchTriggered()
-{
-	bIsTouch = true;
-	OnSetDestinationTriggered();
-}
-
-void ADungeonMasterPlayerController::OnTouchReleased()
-{
-	bIsTouch = false;
-	OnSetDestinationReleased();
-}
-
-void ADungeonMasterPlayerController::UpdateCachedDestination()
-{
-	// We look for the location in the world where the player has pressed the input
+	// Mouse'un altındaki dünyayı tara
 	FHitResult Hit;
-	bool bHitSuccessful = false;
-	if (bIsTouch)
+	if (GetHitResultUnderCursor(ECC_Visibility, false, Hit))
 	{
-		bHitSuccessful = GetHitResultUnderFinger(ETouchIndex::Touch1, ECollisionChannel::ECC_Visibility, true, Hit);
-	}
-	else
-	{
-		bHitSuccessful = GetHitResultUnderCursor(ECollisionChannel::ECC_Visibility, true, Hit);
-	}
+		// 1. Tıklanan Lokasyonu Al
+		FVector ClickLocation = Hit.Location;
 
-	// If we hit a surface, cache the location
-	if (bHitSuccessful)
-	{
-		CachedDestination = Hit.Location;
+		// 2. Grid Koordinatına Çevir (Snap to Grid)
+		// Grid'in (0,0,0) merkezli başladığını varsayıyoruz.
+		int32 X = FMath::RoundToInt(ClickLocation.X / GridSize);
+		int32 Y = FMath::RoundToInt(ClickLocation.Y / GridSize);
+		
+		FGridCoordinate TargetCoord;
+		TargetCoord.X = X;
+		TargetCoord.Y = Y;
+
+		// 3. Subsystem'e "İnşa Et" emri ver
+		if (UGridSubsystem* GridSys = GetWorld()->GetSubsystem<UGridSubsystem>())
+		{
+			// Şimdilik test amaçlı her tıklamada "Duvar" koymayı deniyoruz.
+			// İleride buraya seçili olan TileID gelecek.
+			FName SelectedTileID = TEXT("Wall"); 
+			
+			// Eğer Shift'e basılıysa silme (Floor yapma) mantığı eklenebilir.
+			bool bSuccess = GridSys->TryPlaceTile(TargetCoord, SelectedTileID);
+			
+			if (bSuccess)
+			{
+				// Ses veya efekt oynatılabilir
+				// ClientPlaySoundAtLocation(...);
+			}
+		}
 	}
 }

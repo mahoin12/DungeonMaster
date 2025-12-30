@@ -31,6 +31,12 @@ public:
 	// Düşman öldüğünde/kalbe ulaştığında çağrılacak
 	void RegisterEnemyDeath(AActor* DeadUnit);
 
+	UFUNCTION(BlueprintCallable, Category = "Game Flow")
+	void AdvanceToNextPhase();
+
+	// Savaş bittiğinde (Tüm düşmanlar ölünce) çağrılır
+	void OnCombatEnded(bool bPlayerWon);
+
 	UPROPERTY(BlueprintAssignable, Category = "Events")
 	FOnGamePhaseChanged OnGamePhaseChanged;
 	

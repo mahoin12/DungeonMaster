@@ -1,6 +1,16 @@
 #include "DraggableTileWidget.h"
 #include "DungeonTileDrag.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Components/TextBlock.h"
+
+void UDraggableTileWidget::InitializeTile(FName ID)
+{
+	TileID = ID;
+	if (TileNameText)
+	{
+		TileNameText->SetText(FText::FromName(ID));
+	}
+}
 
 FReply UDraggableTileWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
 {

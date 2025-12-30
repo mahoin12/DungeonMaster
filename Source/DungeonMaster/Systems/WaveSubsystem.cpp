@@ -1,6 +1,7 @@
 #include "WaveSubsystem.h"
 #include "GridSubsystem.h"
 #include "DungeonMaster/Actors/GridUnit.h"
+#include "Kismet/GameplayStatics.h"
 
 void UWaveSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -102,6 +103,37 @@ void UWaveSubsystem::RegisterEnemyDeath(AActor* DeadUnit)
 		// Tüm düşmanlar bitti, dalga temizlendi!
 		FinishWave();
 	}
+}
+
+void UWaveSubsystem::AdvanceToNextPhase()
+{
+	switch (CurrentPhase)
+	{
+	case EGamePhase::Preparation:
+		// Hazırlıktan -> Savaşa
+		// TODO: TestWaveData yerine ileride Level'a ait datayı alacağız.
+		// Şimdilik null geçiyoruz veya daha önceki StartCombatPhase'i düzenleyebiliriz.
+		UE_LOG(LogTemp, Log, TEXT("Savas Baslatiliyor!"));
+		StartCombatPhase(CurrentWaveData); // CurrentWaveData'nın önceden set edildiğini varsayıyoruz
+		break;
+
+	case EGamePhase::Combat:
+		// Savaş butonla geçilmez, bitmesi beklenir. Ama hile/debug için eklenebilir.
+		UE_LOG(LogTemp, Warning, TEXT("Savas zaten devam ediyor."));
+		break;
+
+	case EGamePhase::Victory:
+	case EGamePhase::Defeat:
+		// Oyun bitti, Başa dön (Reload Level)
+		UGameplayStatics::OpenLevel(this, FName(*GetWorld()->GetName()), false);
+		break;
+	}
+}
+
+void UWaveSubsystem::OnCombatEnded(bool bPlayerWon)
+{
+	CurrentPhase = bPlayerWon ? EGamePhase::Victory : EGamePhase::Defeat;
+	OnGamePhaseChanged.Broadcast(CurrentPhase);
 }
 
 void UWaveSubsystem::FinishWave()

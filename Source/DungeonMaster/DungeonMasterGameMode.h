@@ -1,26 +1,32 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
-
 #pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameModeBase.h"
+#include "DungeonMaster/Info/Types.h"
 #include "DungeonMasterGameMode.generated.h"
 
-/**
- *  Simple Game Mode for a top-down perspective game
- *  Sets the default gameplay framework classes
- *  Check the Blueprint derived class for the set values
- */
-UCLASS(abstract)
+class UDungeonMainWidget;
+
+UCLASS(minimalapi)
 class ADungeonMasterGameMode : public AGameModeBase
 {
 	GENERATED_BODY()
 
 public:
-
-	/** Constructor */
 	ADungeonMasterGameMode();
+	
+	virtual void BeginPlay() override;
+
+protected:
+	// Kullanılacak Widget Sınıfı (BP'den seçilecek)
+	UPROPERTY(EditDefaultsOnly, Category = "UI")
+	TSubclassOf<UDungeonMainWidget> MainWidgetClass;
+
+	// Oluşturulan Widget referansı
+	UPROPERTY()
+	UDungeonMainWidget* MainWidgetInstance;
+
+	// Subsystem eventlerini dinlemek için
+	UFUNCTION()
+	void HandlePhaseChanged(EGamePhase NewPhase);
 };
-
-
-

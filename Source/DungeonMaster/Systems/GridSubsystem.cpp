@@ -6,8 +6,28 @@
 void UGridSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
-	// Varsayılan bir başlangıç
-	InitializeGrid(10, 10);
+
+	GridMap.Empty();
+	// Kalbi yerleştir (Bir sonraki frame'de çalışması için timer koyabiliriz ama şimdilik direkt çağıralım)
+	// Not: Oyun dünyası tamamen yüklenmeden çağrılırsa Visualizer yakalayamaz. 
+	// Bu yüzden GameMode BeginPlay'den çağırmak daha güvenlidir ama burada logic kuralım.
+}
+
+void UGridSubsystem::SpawnCoreUnit()
+{
+	// Elle (0,0) yazmak yerine sınıf değişkenini kullan
+	FGridCoordinate CoreCoord = CorePoint; 
+    
+	FCellData CoreData;
+	CoreData.CellType = ECellType::Core; 
+	CoreData.TileID = FName("Core");     
+
+	GridMap.Add(CoreCoord, CoreData);
+
+	if (OnGridStateChanged.IsBound())
+	{
+		OnGridStateChanged.Broadcast(CoreCoord, CoreData);
+	}
 }
 
 void UGridSubsystem::InitializeGrid(int32 Width, int32 Height)
@@ -16,7 +36,13 @@ void UGridSubsystem::InitializeGrid(int32 Width, int32 Height)
 	GridHeight = Height;
 	GridMap.Empty();
 
-	// Grid'i boş hücrelerle doldur (İsteğe bağlı, TMap olduğu için doldurmasak da olur ama yer tutsun)
+	// 1. Varsayılan noktaları ayarla (Sol alt ve Sağ üst köşe)
+	CorePoint = FGridCoordinate(0, 0);
+	SpawnPoint = FGridCoordinate(Width - 1, Height - 1); 
+
+	UE_LOG(LogTemp, Warning, TEXT("GRID INIT: Core: (0,0), Spawn: (%d, %d)"), SpawnPoint.X, SpawnPoint.Y);
+
+	// Grid'i boş hücrelerle doldur
 	for (int32 x = 0; x < Width; x++)
 	{
 		for (int32 y = 0; y < Height; y++)
@@ -31,66 +57,73 @@ void UGridSubsystem::InitializeGrid(int32 Width, int32 Height)
 
 bool UGridSubsystem::TryPlaceTile(const FGridCoordinate& Coord, FName TileID)
 {
-	if (const UWorld* World = GetWorld())
+	// 1. Koordinat Geçerli mi?
+	if (!IsValidCoordinate(Coord))
 	{
-		if (const UWaveSubsystem* WaveSys = World->GetSubsystem<UWaveSubsystem>())
-		{
-			if (WaveSys->GetCurrentPhase() == EGamePhase::Combat)
-			{
-				UE_LOG(LogTemp, Warning, TEXT("Savaş sırasında inşaat yapılamaz!"));
-				return false; 
-			}
-		}
-	}
-	
-	if (!IsValidCoordinate(Coord)) return false;
-
-	// Zaten dolu mu?
-	if (IsBlocked(Coord)) 
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Hücre zaten dolu!"));
+		UE_LOG(LogTemp, Error, TEXT("INSAAT REDDEDILDI: Koordinat Grid disinda! (%d, %d)"), Coord.X, Coord.Y);
 		return false;
 	}
 
-	// 1. Geçici olarak haritaya "Duvar" koyduğumuzu simüle et
+	// 2. Hücre zaten dolu mu? (Core veya başka duvar var mı?)
+	if (IsBlocked(Coord)) 
+	{
+		// Detaylı bilgi ver: Orada ne var?
+		FName ExistingID = TEXT("Unknown");
+		if(GridMap.Contains(Coord)) ExistingID = GridMap[Coord].TileID;
+		
+		UE_LOG(LogTemp, Warning, TEXT("INSAAT REDDEDILDI: Hucre Zaten Dolu! (%d, %d) - Icindeki: %s"), Coord.X, Coord.Y, *ExistingID.ToString());
+		return false;
+	}
+
+	// 3. Spawn veya Core noktasına inşaat yapmaya çalışıyor mu?
+	if (Coord == SpawnPoint || Coord == CorePoint)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("INSAAT REDDEDILDI: Spawn veya Core noktasina duvar koyamazsin!"));
+		return false;
+	}
+
+	// --- SIMULASYON BASLIYOR ---
+	
+	// Eski tipi sakla
 	ECellType OriginalType = ECellType::Empty;
 	if (GridMap.Contains(Coord)) OriginalType = GridMap[Coord].CellType;
 
+	// Geçici olarak duvar koy
 	FCellData TempData;
 	TempData.CellType = ECellType::Wall; 
 	GridMap.Add(Coord, TempData);
 
-	// 2. Yol hala açık mı kontrol et (Girişten Kalbe yol var mı?)
+	// 4. Yol Kontrolü: Spawn'dan Core'a hala gidilebiliyor mu?
 	TArray<FGridCoordinate> TestPath;
-    
-	// İşte 'bCanPlace' dediğim değişken aslında buradaki sonucumuz:
+	bool bPathExists = FindPath(SpawnPoint, CorePoint, TestPath);
 
-	if (FindPath(SpawnPoint, CorePoint, TestPath))
+	if (bPathExists)
 	{
-		// YOL AÇIK: İnşaatı onayla ve veriyi güncelle
+		// ONAYLANDI: Kalıcı veriyi işle
 		FCellData FinalData;
-		FinalData.CellType = ECellType::Room; // Veya TileID'ye göre duvar/tuzak vs.
+		FinalData.CellType = ECellType::Room; // Veya TileID'ye göre duvar
 		FinalData.TileID = TileID;
-        
-		// Map'i güncelle
+		
 		GridMap.Add(Coord, FinalData);
-        
-		// *** YENİ EKLENEN KISIM ***
-		// Görselleştiriciye (Visualizer) haber ver: "Buraya yeni bir şey kondu, çiz!"
+		
 		if (OnGridStateChanged.IsBound())
 		{
 			OnGridStateChanged.Broadcast(Coord, FinalData);
 		}
-        
+		
+		UE_LOG(LogTemp, Display, TEXT("INSAAT ONAYLANDI: (%d, %d) konumuna %s yerlestirildi."), Coord.X, Coord.Y, *TileID.ToString());
 		return true;
 	}
-	// YOL TIKALI: Değişikliği geri al (Simülasyonu iptal et)
-	FCellData RevertData;
-	RevertData.CellType = OriginalType;
-	GridMap.Add(Coord, RevertData);
-        
-	UE_LOG(LogTemp, Error, TEXT("İnşaat Yolu Tıkıyor! İzin verilmedi."));
-	return false;
+	else
+	{
+		// REDDEDILDI: Değişikliği geri al!
+		FCellData RevertData;
+		RevertData.CellType = OriginalType;
+		GridMap.Add(Coord, RevertData);
+		
+		UE_LOG(LogTemp, Error, TEXT("INSAAT REDDEDILDI: Yol Tikaniyor! (Pathfinding Failed)"));
+		return false;
+	}
 }
 
 bool UGridSubsystem::IsBlocked(const FGridCoordinate& Coord) const
