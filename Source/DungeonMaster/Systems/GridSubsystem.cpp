@@ -293,3 +293,130 @@ bool UGridSubsystem::FindPath(FGridCoordinate Start, FGridCoordinate End, TArray
 
 	return false; // Yol bulunamadı
 }
+
+bool UGridSubsystem::HasConnectedNeighbor(const FGridCoordinate& Coord) const
+{
+    // Eğer Core'un tam yanına koyuyorsak true
+    TArray<FGridCoordinate> Neighbors = GetNeighbors(Coord);
+    for (const FGridCoordinate& N : Neighbors)
+    {
+        if (GridMap.Contains(N))
+        {
+            // Komşu dolu mu? (Empty değilse doludur)
+            if (GridMap[N].CellType != ECellType::Empty)
+            {
+                return true;
+            }
+        }
+    }
+    return false; // Hiçbir komşu dolu değil
+}
+
+TSet<FGridCoordinate> UGridSubsystem::GetConnectedTiles() const
+{
+    TSet<FGridCoordinate> Visited;
+    TArray<FGridCoordinate> Queue;
+
+    // Başlangıç: Core
+    if (GridMap.Contains(CorePoint))
+    {
+        Queue.Add(CorePoint);
+        Visited.Add(CorePoint);
+    }
+
+    while (Queue.Num() > 0)
+    {
+        FGridCoordinate Current = Queue[0];
+        Queue.RemoveAt(0);
+
+        TArray<FGridCoordinate> Neighbors = GetNeighbors(Current);
+        for (const FGridCoordinate& Next : Neighbors)
+        {
+            // Eğer komşu doluysa ve daha önce gezilmediyse
+            if (GridMap.Contains(Next) && 
+                GridMap[Next].CellType != ECellType::Empty && 
+                !Visited.Contains(Next))
+            {
+                Visited.Add(Next);
+                Queue.Add(Next);
+            }
+        }
+    }
+    return Visited;
+}
+
+void UGridSubsystem::PruneDisconnectedTiles()
+{
+    // 1. Core'a bağlı olanları bul
+    TSet<FGridCoordinate> ConnectedSet = GetConnectedTiles();
+
+    // 2. Grid'deki tüm dolu hücreleri gez
+    TArray<FGridCoordinate> ToRemove;
+    for (auto& Elem : GridMap)
+    {
+        // Boş değilse ve Connected setinde yoksa silinecek
+        if (Elem.Value.CellType != ECellType::Empty && !ConnectedSet.Contains(Elem.Key))
+        {
+            ToRemove.Add(Elem.Key);
+        }
+    }
+
+    // 3. Silme işlemini uygula ve desteye iade et
+    for (const FGridCoordinate& Coord : ToRemove)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("PRUNE: (%d, %d) baglantisi koptugu icin silindi."), Coord.X, Coord.Y);
+        
+        // TODO: Burada UI'a veya GameMode'a "Kartı desteye ekle" sinyali göndermelisin.
+        // ReturnTileToDeck(GridMap[Coord].TileID); 
+        
+        RemoveTile(Coord);
+    }
+}
+
+void UGridSubsystem::RemoveTile(FGridCoordinate Coord)
+{
+    if (!GridMap.Contains(Coord)) return;
+    
+    // Core silinemez
+    if (Coord == CorePoint) return;
+
+    // Haritadan sil (Empty yap)
+    FCellData EmptyData;
+    EmptyData.CellType = ECellType::Empty;
+    GridMap.Add(Coord, EmptyData);
+
+    // Görsel güncelleme için event fırlat
+    if (OnGridStateChanged.IsBound())
+    {
+        OnGridStateChanged.Broadcast(Coord, EmptyData);
+    }
+
+    // Bir taş silindikten sonra diğerlerinin bağlantısı koptu mu?
+    PruneDisconnectedTiles();
+}
+
+bool UGridSubsystem::IsTileOccupied(const FGridCoordinate& Coord) const
+{
+    if (!IsValidCoordinate(Coord)) return false;
+    if (!GridMap.Contains(Coord)) return false;
+    return GridMap[Coord].CellType != ECellType::Empty;
+}
+
+bool UGridSubsystem::ForceReplaceTile(const FGridCoordinate& Coord, FName NewTileID)
+{
+    // Önce eskisi varsa iade et (RemoveTile içindeki mantık tetiklenmeden manuel iade)
+    if (IsTileOccupied(Coord))
+    {
+        FName OldID = GridMap[Coord].TileID;
+        // ReturnToDeck(OldID); // Kartı geri ver
+    }
+    
+    // Şimdi direkt yerleştir (TryPlaceTile'daki kontrollerin bazılarını atlayarak)
+    // Ancak Pathfinding (Spawn -> Core) hala kapanmamalı!
+    
+    // ... Buraya TryPlaceTile mantığının "Force" hali gelir ...
+    // Şimdilik TryPlaceTile'ı kullanabiliriz, çünkü o zaten doluysa hata veriyor.
+    // Biz dolu olduğunu bildiğimiz halde "Dolu Değilmiş" gibi davranıp logic kuracağız.
+    
+    return TryPlaceTile(Coord, NewTileID); // Not: TryPlaceTile'ı "Replace" parametresi alacak şekilde güncellemek daha temizdir.
+}

@@ -6,23 +6,86 @@ AGridVisualizer::AGridVisualizer()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+
+	// ISMC Oluştur
+	GridCollisionISMC = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("GridCollisionISMC"));
+	GridCollisionISMC->SetupAttachment(RootComponent);
+	
+	// Collision Ayarları: Visibility kanalından bloklamalı ki Mouse Raycast'i çarpsın.
+	GridCollisionISMC->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	GridCollisionISMC->SetCollisionResponseToAllChannels(ECR_Ignore);
+	GridCollisionISMC->SetCollisionResponseToChannel(ECC_Visibility, ECR_Block);
+	
+	// Başlangıçta gizli (HiddenInGame=true olunca Raycast çarpar ama gözükmez. 
+	// Tamamen disable etmek için Collision'ı kapatacağız.)
+	GridCollisionISMC->SetHiddenInGame(true);
 }
 
 void AGridVisualizer::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// Subsystem'e abone ol
 	if (UWorld* World = GetWorld())
 	{
 		if (UGridSubsystem* GridSubsystem = World->GetSubsystem<UGridSubsystem>())
 		{
-			// Delegate'i dinlemeye başla
 			GridSubsystem->OnGridStateChanged.AddDynamic(this, &AGridVisualizer::HandleGridChanged);
 			
-			// TODO: Eğer oyun başladığında kayıtlı bir grid varsa burada bir "RebuildAll" fonksiyonu çağırıp hepsini çizebilirsin.
+			// Grid Collision Alanını Oluştur
+			GenerateGridCollision(GridSubsystem->GetGridWidth(), GridSubsystem->GetGridHeight());
 		}
 	}
+}
+
+void AGridVisualizer::GenerateGridCollision(int32 Width, int32 Height)
+{
+	if (!GridCollisionISMC) return;
+
+	GridCollisionISMC->ClearInstances();
+	CachedGridWidth = Width;
+
+	// Grid'in (0,0) noktası merkez mi köşe mi? Kodlarınızda (0,0) köşe gibi duruyor.
+	// Pivotu ortada olan bir Plane Mesh (SM_Plane) kullanırsanız 50 birim offset gerekebilir.
+	// Varsayım: Pivot sol alt köşe veya merkez, ona göre Offset ekleyebilirsin.
+	FVector Offset(GridCellSize / 2.0f, GridCellSize / 2.0f, 0.5f); // Z hafif yukarıda olsun z-fighting olmasın
+
+	for (int32 y = 0; y < Height; y++)
+	{
+		for (int32 x = 0; x < Width; x++)
+		{
+			FVector Location(x * GridCellSize, y * GridCellSize, 0.0f);
+			// Eğer mesh pivotu merkezdeyse offset ekle:
+			// Location += Offset; 
+
+			FTransform Transform(FRotator::ZeroRotator, Location, FVector(1.0f)); // Scale gerekirse ayarla (Mesh 100x100 ise 1.0)
+			GridCollisionISMC->AddInstance(Transform);
+		}
+	}
+
+	// Varsayılan olarak kapalı
+	SetPlacementGridActive(false);
+}
+
+void AGridVisualizer::SetPlacementGridActive(bool bActive)
+{
+	if (!GridCollisionISMC) return;
+
+	// Görünürlük
+	GridCollisionISMC->SetHiddenInGame(!bActive);
+
+	// Collision'ı sadece aktifken açalım ki normal oyunda tıklamaları engellemesin
+	GridCollisionISMC->SetCollisionEnabled(bActive ? ECollisionEnabled::QueryOnly : ECollisionEnabled::NoCollision);
+}
+
+FGridCoordinate AGridVisualizer::GetCoordinateFromIndex(int32 InstanceIndex) const
+{
+	if (CachedGridWidth <= 0) return { -1, -1 };
+
+	// Matematiksel sihir: Index = Y * Width + X
+	int32 Y = InstanceIndex / CachedGridWidth;
+	int32 X = InstanceIndex % CachedGridWidth;
+
+	return { X, Y };
 }
 
 void AGridVisualizer::HandleGridChanged(FGridCoordinate Coord, FCellData NewData)

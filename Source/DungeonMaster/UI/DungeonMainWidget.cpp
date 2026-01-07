@@ -2,8 +2,10 @@
 #include "DungeonMaster/Systems/WaveSubsystem.h"
 #include "DraggableTileWidget.h"
 #include "DungeonTileDrag.h"
-#include "Components/WrapBox.h"
+#include "DungeonMaster/Actors/GhostTileActor.h"
+#include "DungeonMaster/Actors/GridVisualizer.h"
 #include "DungeonMaster/Systems/GridSubsystem.h"
+#include "Components/InstancedStaticMeshComponent.h"
 #include "Kismet/GameplayStatics.h"
 
 void UDungeonMainWidget::NativeConstruct()
@@ -69,10 +71,8 @@ void UDungeonMainWidget::BuildDeck(const TArray<FName>& AvailableTiles)
 {
 	if (!TileDeckContainer || !DraggableTileClass) return;
 
-	// Önce paneli temizle (Eski elden kalanları sil)
 	TileDeckContainer->ClearChildren();
 
-	// Yeni kartları oluştur
 	for (const FName& TileID : AvailableTiles)
 	{
 		if (UDraggableTileWidget* NewTileWidget = CreateWidget<UDraggableTileWidget>(GetOwningPlayer(), DraggableTileClass))
@@ -83,23 +83,175 @@ void UDungeonMainWidget::BuildDeck(const TArray<FName>& AvailableTiles)
 	}
 }
 
-bool UDungeonMainWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+AGridVisualizer* UDungeonMainWidget::GetGridVisualizer()
 {
-    // 1. Payload kontrolü
+	if (!CachedGridVisualizer)
+	{
+		// Sahnedeki GridVisualizer aktörünü bul
+		CachedGridVisualizer = Cast<AGridVisualizer>(UGameplayStatics::GetActorOfClass(GetWorld(), AGridVisualizer::StaticClass()));
+	}
+	return CachedGridVisualizer;
+}
+
+// ==============================================================================
+// DRAG & DROP SİSTEMİ
+// ==============================================================================
+
+void UDungeonMainWidget::NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation)
+{
+	Super::NativeOnDragDetected(InGeometry, InMouseEvent, OutOperation);
+}
+
+bool UDungeonMainWidget::NativeOnDragOver(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
 	UDungeonTileDrag* TileDragOp = Cast<UDungeonTileDrag>(InOperation);
 	if (!TileDragOp) return false;
 
+	// 1. Grid Visualizer'ı Aktif Et (Collision kutularını aç)
+	if (AGridVisualizer* Vis = GetGridVisualizer())
+	{
+		Vis->SetPlacementGridActive(true);
+	}
+
+	FGridCoordinate HoverCoord;
+	FVector WorldPos;
+	
+	// 2. Mouse'un altındaki Grid kutusunu bul (Raycast ile)
+	bool bHit = GetGridPositionFromMouse(InGeometry, InDragDropEvent, HoverCoord, WorldPos);
+
+	// 3. Ghost Actor Yönetimi
+	if (!CurrentGhostActor && GhostActorClass && bHit)
+	{
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		CurrentGhostActor = GetWorld()->SpawnActor<AGhostTileActor>(GhostActorClass, WorldPos, FRotator::ZeroRotator, SpawnParams);
+		// İstersen burada TileDragOp->TileID'ye göre Ghost Actor meshini değiştirebilirsin.
+	}
+
+	if (CurrentGhostActor)
+	{
+		if (bHit)
+		{
+			// Snap olmuş konuma taşı
+			CurrentGhostActor->SetActorLocation(WorldPos);
+			CurrentGhostActor->SetActorHiddenInGame(false);
+
+			// Geçerlilik Kontrolü (Renk değişimi için)
+			if (UGridSubsystem* GridSys = GetWorld()->GetSubsystem<UGridSubsystem>())
+			{
+				bool bOccupied = GridSys->IsTileOccupied(HoverCoord);
+				bool bHasNeighbor = GridSys->HasConnectedNeighbor(HoverCoord);
+				
+				// Normalde: Dolu değilse VE komşusu varsa (bitişikse) geçerlidir.
+				bool bIsValid = !bOccupied && bHasNeighbor;
+
+				// Replacement (Değiştirme) İstisnası:
+				// Eğer doluysa ama Core değilse ve yine de bağlıysa -> Geçerli say (Mavi/Sarı yanabilir ama şimdilik yeşil geçiyoruz)
+				if (bOccupied && bHasNeighbor && HoverCoord != GridSys->GetCorePoint())
+				{
+					bIsValid = true; 
+				}
+
+				CurrentGhostActor->SetValidity(bIsValid);
+			}
+		}
+		else
+		{
+			// Grid üzerinde değilsek gizle
+			CurrentGhostActor->SetActorHiddenInGame(true);
+		}
+	}
+
+	return true;
+}
+
+void UDungeonMainWidget::NativeOnDragCancelled(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
+	// Sürükleme iptal oldu, temizlik yap
+	if (CurrentGhostActor)
+	{
+		CurrentGhostActor->Destroy();
+		CurrentGhostActor = nullptr;
+	}
+
+	// Grid Collision'ı kapat
+	if (AGridVisualizer* Vis = GetGridVisualizer())
+	{
+		Vis->SetPlacementGridActive(false);
+	}
+}
+
+bool UDungeonMainWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation)
+{
+	UDungeonTileDrag* TileDragOp = Cast<UDungeonTileDrag>(InOperation);
+	if (!TileDragOp) return false;
+
+	// --- Temizlik ---
+	if (CurrentGhostActor)
+	{
+		CurrentGhostActor->Destroy();
+		CurrentGhostActor = nullptr;
+	}
+	if (AGridVisualizer* Vis = GetGridVisualizer())
+	{
+		Vis->SetPlacementGridActive(false);
+	}
+	// ----------------
+
+	FGridCoordinate TargetCoord;
+	FVector WorldPos;
+
+	// Bırakılan yeri tespit et
+	if (GetGridPositionFromMouse(InGeometry, InDragDropEvent, TargetCoord, WorldPos))
+	{
+		if (UGridSubsystem* GridSys = GetWorld()->GetSubsystem<UGridSubsystem>())
+		{
+			// 1. Replacement (Değiştirme) Kontrolü
+			if (GridSys->IsTileOccupied(TargetCoord))
+			{
+				// Core değiştirilemez
+				if (TargetCoord == GridSys->GetCorePoint()) 
+				{
+					UE_LOG(LogTemp, Warning, TEXT("DROP: Core degistirilemez!"));
+					return false;
+				}
+
+				// Zorla değiştir
+				UE_LOG(LogTemp, Log, TEXT("DROP: Tas degistiriliyor..."));
+				return GridSys->ForceReplaceTile(TargetCoord, TileDragOp->TileID);
+			}
+
+			// 2. Bitişiklik (Adjacency) Kontrolü
+			if (!GridSys->HasConnectedNeighbor(TargetCoord))
+			{
+				UE_LOG(LogTemp, Warning, TEXT("DROP: Baglantisiz (Havada) tas koyamazsiniz!"));
+				// TODO: Kartı desteye geri ekle
+				return false;
+			}
+
+			// 3. Normal Yerleştirme
+			bool bSuccess = GridSys->TryPlaceTile(TargetCoord, TileDragOp->TileID);
+			if (!bSuccess)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("DROP: Yerlestirme basarisiz (Yol kapaniyor vs.)"));
+				// TODO: Kartı desteye geri ekle
+			}
+			return bSuccess;
+		}
+	}
+
+	return false;
+}
+
+bool UDungeonMainWidget::GetGridPositionFromMouse(const FGeometry& Geometry, const FPointerEvent& MouseEvent, FGridCoordinate& OutCoord, FVector& OutWorldPos)
+{
 	APlayerController* PC = GetOwningPlayer();
 	if (!PC) return false;
 
-	// --- KOORDİNAT DÜZELTME (SENİN YÖNTEMİN) ---
+	// 1. Viewport Ölçeklemesi (DPI Scaling Fix)
+	FVector2D WidgetSize = Geometry.GetLocalSize();
+	FVector2D LocalMousePos = Geometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition());
 	FVector2D ViewportPosition = FVector2D::ZeroVector;
-
-	// Widget'ın o anki boyutu
-	const FVector2D WidgetSize = InGeometry.GetLocalSize();
-	
-	// Mouse'un widget içindeki lokal pozisyonu
-	const FVector2D LocalMousePos = InGeometry.AbsoluteToLocal(InDragDropEvent.GetScreenSpacePosition());
 
 	if (UWorld* World = GetWorld())
 	{
@@ -107,11 +259,8 @@ bool UDungeonMainWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDr
 		{
 			FVector2D ViewportSize;
 			ViewportClient->GetViewportSize(ViewportSize);
-
-			// Sıfıra bölünme hatası olmasın
 			if (WidgetSize.X > 0 && WidgetSize.Y > 0)
 			{
-				// Oran orantı ile gerçek Viewport pikselini buluyoruz
 				ViewportPosition = FVector2D(
 					(LocalMousePos.X / WidgetSize.X) * ViewportSize.X,
 					(LocalMousePos.Y / WidgetSize.Y) * ViewportSize.Y
@@ -119,56 +268,42 @@ bool UDungeonMainWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDr
 			}
 		}
 	}
-	// --------------------------------------------
 
-	FVector WorldLocation;
-	FVector WorldDirection;
-
-	// 2. Deproject (Artık hesaplanmış ViewportPosition kullanıyoruz)
-	if (PC->DeprojectScreenPositionToWorld(ViewportPosition.X, ViewportPosition.Y, WorldLocation, WorldDirection))
+	// 2. Deproject ve Raycast
+	FVector WorldLoc, WorldDir;
+	if (PC->DeprojectScreenPositionToWorld(ViewportPosition.X, ViewportPosition.Y, WorldLoc, WorldDir))
 	{
-		// 3. Raycast (Line Trace)
-		FVector TraceStart = WorldLocation;
-		FVector TraceEnd = WorldLocation + (WorldDirection * 50000.0f); // 50k birim ileri
+		FVector Start = WorldLoc;
+		FVector End = WorldLoc + (WorldDir * 50000.0f);
+		FHitResult Hit;
+		
+		FCollisionQueryParams Params;
+		Params.bTraceComplex = true; // Instance'lara tam oturması için
 
-		FHitResult HitResult;
-		FCollisionQueryParams QueryParams;
-		QueryParams.bTraceComplex = false;
-
-		bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, TraceStart, TraceEnd, ECC_Visibility, QueryParams);
-
-		if (bHit)
+		// Sadece Visibility kanalına çarpıyoruz (Grid Collision bu kanalda blokluyor olmalı)
+		if (GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
 		{
-			// DEBUG: Nereye vurduğumuzu görelim (Yeşil Küre)
-			DrawDebugSphere(GetWorld(), HitResult.Location, 30.0f, 12, FColor::Green, false, 5.0f);
-			UE_LOG(LogTemp, Warning, TEXT("DROP SUCCESS: Vurulan Yer: %s"), *HitResult.Location.ToString());
-
-			// 4. GRID SNAP MATEMATİĞİ
-			float GridSize = 100.0f;
-			int32 GridX = FMath::RoundToInt(HitResult.Location.X / GridSize);
-			int32 GridY = FMath::RoundToInt(HitResult.Location.Y / GridSize);
-
-			FGridCoordinate TargetCoord;
-			TargetCoord.X = GridX;
-			TargetCoord.Y = GridY;
-
-			// 5. Subsystem'e gönder
-			if (UGridSubsystem* GridSys = GetWorld()->GetSubsystem<UGridSubsystem>())
+			// Vurduğumuz şey bir Instanced Static Mesh mi?
+			if (UInstancedStaticMeshComponent* HitISMC = Cast<UInstancedStaticMeshComponent>(Hit.Component))
 			{
-				bool bSuccess = GridSys->TryPlaceTile(TargetCoord, TileDragOp->TileID);
-				return bSuccess;
+				// Item Index geçerli mi? (-1 değilse bir instance'a vurduk demektir)
+				if (Hit.Item != INDEX_NONE)
+				{
+					if (AGridVisualizer* Vis = GetGridVisualizer())
+					{
+						// Visualizer'dan bu indexin koordinatını istiyoruz
+						OutCoord = Vis->GetCoordinateFromIndex(Hit.Item);
+						
+						// Kutunun tam merkezini alalım (Snap işlemi)
+						FTransform InstTransform;
+						HitISMC->GetInstanceTransform(Hit.Item, InstTransform, true);
+						OutWorldPos = InstTransform.GetLocation();
+						
+						return true;
+					}
+				}
 			}
 		}
-		else
-		{
-			// Raycast boşa giderse Kırmızı çizgi çizelim, yönü görelim
-			DrawDebugLine(GetWorld(), TraceStart, TraceEnd, FColor::Red, false, 5.0f);
-			UE_LOG(LogTemp, Error, TEXT("DROP: Raycast BOSA GITI!"));
-		}
-	}
-	else
-	{
-		UE_LOG(LogTemp, Error, TEXT("DROP: Deproject Başarısız Oldu!"));
 	}
 
 	return false;

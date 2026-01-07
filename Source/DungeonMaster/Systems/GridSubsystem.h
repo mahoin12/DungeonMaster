@@ -47,6 +47,21 @@ public:
 	// Bir tile yerleştirmeyi dener. Yol tıkanıyorsa false döner.
 	bool TryPlaceTile(const FGridCoordinate& Coord, FName TileID);
 
+	// Belirtilen koordinat, dolu olan herhangi bir hücreye komşu mu? (Core'a bağlı zincirin parçası mı?)
+	bool HasConnectedNeighbor(const FGridCoordinate& Coord) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Grid Logic")
+	void RemoveTile(FGridCoordinate Coord);
+
+	// Bağlantısı kopan (Core'a ulaşamayan) tüm taşları bulur ve siler.
+	void PruneDisconnectedTiles();
+
+	// Replacement için: Koordinat dolu mu kontrolü
+	bool IsTileOccupied(const FGridCoordinate& Coord) const;
+
+	// Replacement onayı gelirse zorla yerleştirme
+	bool ForceReplaceTile(const FGridCoordinate& Coord, FName NewTileID);
+
 	// A* Yol Bulma Algoritması
 	bool FindPath(FGridCoordinate Start, FGridCoordinate End, TArray<FGridCoordinate>& OutPath);
 
@@ -63,6 +78,11 @@ public:
 
 	FGridCoordinate GetSpawnPoint() const { return SpawnPoint; }
 	FGridCoordinate GetCorePoint() const { return CorePoint; }
+	
+	UFUNCTION(BlueprintPure, Category = "Grid Info")
+	int32 GetGridWidth() const { return GridWidth; }
+	UFUNCTION(BlueprintPure, Category = "Grid Info")
+	int32 GetGridHeight() const { return GridHeight; }
 
 	UPROPERTY(BlueprintAssignable, Category = "Events")
 	FOnGridStateChanged OnGridStateChanged;
@@ -76,9 +96,12 @@ private:
 	FGridCoordinate SpawnPoint = {0, 0};
 	FGridCoordinate CorePoint = {5, 5};
 
+	UPROPERTY()
+	TArray<AGridUnit*> ActiveUnits;
+
 	// Yol bulma için komşuları getirir
 	TArray<FGridCoordinate> GetNeighbors(const FGridCoordinate& Center) const;
 
-	UPROPERTY()
-	TArray<AGridUnit*> ActiveUnits;
+	// BFS ile Core'dan ulaşılabilen tüm koordinatları döndürür.
+	TSet<FGridCoordinate> GetConnectedTiles() const;
 };
